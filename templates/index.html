@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Test Case Generator</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <style>
+        body { background-color: #f8f9fa; }
+        .container { max-width: 900px; margin-top: 50px; }
+        .card { box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        .endpoint { padding: 10px; border-bottom: 1px solid #eee; }
+        .endpoint:hover { background-color: #f1f1f1; }
+        .detail { font-size: 0.9em; color: #666; }
+        .btn-primary { background-color: #007bff; border-color: #007bff; }
+        .btn-primary:hover { background-color: #0056b3; }
+        .alert { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h1 class="card-title mb-0">API Test Case Generator</h1>
+            </div>
+            <div class="card-body">
+                <form class="mb-4">
+                    <div class="mb-3">
+                        <label for="url" class="form-label">API Doc URL:</label>
+                        <input type="url" class="form-control" id="url" value="https://petstore3.swagger.io/api/v3/openapi.json" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="model" class="form-label">Select Model:</label>
+                        <select class="form-select" id="model">
+                            <option value="gemini">Gemini</option>
+                            <option value="ollama">Ollama</option>
+                        </select>
+                    </div>
+                    <button type="button" class="btn btn-primary" onclick="loadSpec()">Load and List Endpoints</button>
+                </form>
+
+                <div id="endpoints-section" style="display: none;">
+                    <h2>Select Endpoints:</h2>
+                    <div class="mb-3">
+                        <button type="button" class="btn btn-secondary me-2" onclick="selectAll()">Select All</button>
+                        <button type="button" class="btn btn-secondary" onclick="deselectAll()">Deselect All</button>
+                    </div>
+                    <div class="border rounded p-3" style="max-height: 400px; overflow-y: auto;" id="endpoints"></div>
+                    <button type="button" class="btn btn-success mt-3" onclick="generateTests()">Generate Test Cases</button>
+                </div>
+
+                <div id="message" class="alert alert-success" style="display: none;"></div>
+                <div id="error" class="alert alert-danger" style="display: none;"></div>
+                <div id="download-section" style="display: none; margin-top: 20px;">
+                    <button type="button" class="btn btn-info" onclick="downloadCSV()">Download Test Cases CSV</button>
+                </div>
+                <div id="log" class="mt-3" style="max-height: 200px; overflow-y: auto; background-color: #f8f9fa; padding: 10px; border: 1px solid #dee2e6; font-family: monospace; font-size: 0.9em;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let endpoints = [];
+        let csvData = '';
+
+        async function loadSpec() {
+            const url = document.getElementById('url').value;
+            if (!url) {
+                showError('Please enter a URL');
+                return;
+            }
+            logMessage('Loading spec from: ' + url);
+            try {
+                const response = await fetch('/load_spec', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url })
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    endpoints = data.endpoints;
+                    displayEndpoints();
+                    document.getElementById('endpoints-section').style.display = 'block';
+                    showMessage(`Loaded ${endpoints.length} endpoints`);
+                } else {
+                    showError(data.error);
+                }
+            } catch (e) {
+                showError('Failed to load spec: ' + e.message);
+            }
+        }
+
+        function displayEndpoints() {
+            const container = document.getElementById('endpoints');
+            container.innerHTML = '';
+            endpoints.forEach((ep, index) => {
+                const div = document.createElement('div');
+                div.className = 'endpoint d-flex align-items-center';
+                div.innerHTML = `
+                    <input type="checkbox" class="form-check-input me-2" id="ep-${index}" value="${index}">
+                    <label class="form-check-label flex-grow-1" for="ep-${index}" onclick="showDetail(${index})">${ep.method} ${ep.path}</label>
+                    <div id="detail-${index}" class="detail mt-1" style="display:none;">Params: ${ep.params.join(', ')}</div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        async function generateTests() {
+            const selected = [];
+            endpoints.forEach((ep, index) => {
+                const checkbox = document.getElementById(`ep-${index}`);
+                if (checkbox.checked) {
+                    selected.push(index);
+                }
+            });
+            if (selected.length === 0) {
+                showError('Please select at least one endpoint');
+                return;
+            }
+            const model = document.getElementById('model').value;
+            logMessage(`Generating test cases for ${selected.length} endpoints using ${model}`);
+            try {
+                const response = await fetch('/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ endpoints: selected, model })
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    csvData = data.csv;
+                    document.getElementById('download-section').style.display = 'block';
+                    showMessage(data.message);
+                } else {
+                    showError(data.error);
+                }
+            } catch (e) {
+                showError('Failed to generate tests: ' + e.message);
+            }
+        }
+
+        function showDetail(index) {
+            const detail = document.getElementById(`detail-${index}`);
+            detail.style.display = detail.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function selectAll() {
+            const checkboxes = document.querySelectorAll('#endpoints input[type="checkbox"]');
+            checkboxes.forEach(cb => cb.checked = true);
+        }
+
+        function deselectAll() {
+            const checkboxes = document.querySelectorAll('#endpoints input[type="checkbox"]');
+            checkboxes.forEach(cb => cb.checked = false);
+        }
+
+        function downloadCSV() {
+            if (!csvData) {
+                showError('No CSV data available');
+                return;
+            }
+            const blob = new Blob([csvData], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'testcase_matrix.csv';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            logMessage('CSV downloaded');
+        }
+
+        function showMessage(msg) {
+            const el = document.getElementById('message');
+            el.textContent = msg;
+            el.style.display = 'block';
+            document.getElementById('error').style.display = 'none';
+            logMessage('INFO: ' + msg);
+        }
+
+        function showError(msg) {
+            const el = document.getElementById('error');
+            el.textContent = msg;
+            el.style.display = 'block';
+            document.getElementById('message').style.display = 'none';
+            logMessage('ERROR: ' + msg);
+        }
+
+        function logMessage(msg) {
+            const log = document.getElementById('log');
+            const time = new Date().toLocaleTimeString();
+            log.innerHTML += `[${time}] ${msg}<br>`;
+            log.scrollTop = log.scrollHeight;
+        }
+    </script>
+</body>
+</html>

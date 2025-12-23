@@ -1,147 +1,102 @@
+import os
 import csv
 import subprocess
+from google import genai
 
-from src.agent.testcase_prompt import BASE_PROMPT
-
-
+from src.agent.testcase_prompt import BASE_PROMPT 
+# ======================
+# Gemini API key
+# ======================
+os.environ["GEMINI_API_KEY"] = "AIzaSyD9NGH-xVqtHALUy3m7FlrX7s6Fxx_V6iU"
+client = genai.Client()
+ 
+# ======================
+# LLM CALLS (ONLY CALL)
+# ======================
 def call_ollama(prompt, model="phi"):
-    # print("[STEP] Sending request to Ollama...")
-    # resp = requests.post(
-    #     "http://localhost:11434/api/generate",
-    #     json={
-    #         "model": model,
-    #         "prompt": prompt,
-    #     },
-    #     timeout=60,
-    #     stream=True
-    # )
-    # print("[STEP] Streaming response...")
-
-    # output = ""
-    # chunk_count = 0
-
-    # for line in resp.iter_lines():
-    #     if not line:
-    #         continue
-
-    #     decoded = line.decode("utf-8")
-    #     chunk_count += 1
-    #     print(f"[CHUNK {chunk_count}] {decoded[:120]}...")  # log 80 ký tự đầu
-
-    #     try:
-    #         obj = json.loads(decoded)
-    #     except Exception as e:
-    #         print("[WARN] JSON decode failed on chunk:", e)
-    #         print(decoded)
-    #         continue
-
-    #     if "response" in obj:
-    #         output += obj["response"]
-
-    # print("[DONE] Streaming complete. Total chunks:", chunk_count)
-    # print("[OUTPUT SIZE]", len(output), "characters")
-
-    # return output
     result = subprocess.run(
-        ["ollama", "run", model], input=prompt.encode("utf-8"), stdout=subprocess.PIPE
+        ["ollama", "run", model],
+        input=prompt.encode("utf-8"),
+        stdout=subprocess.PIPE,
     )
     return result.stdout.decode("utf-8")
-
-
-def generate_testcases(endpoints):
+ 
+ 
+def call_gemini(prompt, model="gemini-2.5-flash"):
+    return '''
+    /user/john_doe,GET,positive valid input,null,200
+    /user/,GET,missing required fields,null,400
+    /user/user@name,GET,wrong data types,null,400
+    /user/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,GET,boundary values,null,400
+    /user/john_doe,GET,unauthorized,null,401
+    /user/nonexistentuser123,GET,invalid enum values,null,404
+    /user/john_doe,GET,unauthorized,null,401
+    '''
+    # response = client.models.generate_content(
+    #     model=model,
+    #     contents=prompt,
+    # )
+    # return response.text 
+    # raise NotImplementedError("Gemini not configured")
+ 
+ 
+def call_llm(prompt, llm="gemini"):
+    if llm == "ollama":
+        return call_ollama(prompt)
+    elif llm == "gemini":
+        return call_gemini(prompt)
+    else:
+        raise ValueError("Unsupported LLM")
+ 
+def parse_csv_from_llm_output(output: str):
+    """
+    Parse CSV rows from LLM output
+    Expected format:
+    endpoint,method,test_type,input_json,expected_status_code
+    """
     rows = []
-    for ep in endpoints:
-        # prompt = f"""{BASE_PROMPT}
-        #         Endpoint:
-        #         - URL: {ep['path']}
-        #         - Method: {ep['method']}
-        #         - Parameters: {ep['params']}
-        #         """
-        prompt = BASE_PROMPT.format(endpoints=endpoints)
-        out = call_ollama(prompt)
-        print(out)
-        # crude parse: split by lines, pick CSV rows
-        for line in out.splitlines():
-            if line.count(",") >= 4:
-                rows.append(line)
-
-    # write to CSV
-    with open("data/testcase_matrix.csv", "w", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        w.writerow(
+ 
+    for line in output.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+ 
+        # crude CSV detection
+        if line.count(",") >= 4:
+            rows.append(line.split(","))
+ 
+    return rows
+ 
+def write_testcase_csv(rows, path="data/testcase_matrix.csv"):
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(
             ["endpoint", "method", "test_type", "input_json", "expected_status_code"]
         )
-        for r in rows:
-            w.writerow(r.split(","))
+        writer.writerows(rows)
 
-    return rows
+def generate_csv_string(rows):
+    import io
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        ["endpoint", "method", "test_type", "input_json", "expected_status_code"]
+    )
+    writer.writerows(rows)
+    return output.getvalue()
 
-# Tôi muốn nó chỉ trả lời ra như này thôic ó cần ví dụ trong promt không
-# https://example.com/pet,PUT,invalid enum values,,400
-# import requests
-# import json
-# from .testcase_prompt import PROMPT_TEMPLATE, BASE_PROMPT
+def generate_testcases(endpoints, llm="ollama"):
+    prompt = BASE_PROMPT.format(endpoints=endpoints)
+ 
+    # call model
+    raw_output = call_llm(prompt, llm=llm)
+    print("=== RAW LLM OUTPUT ===")
+    print(raw_output)
+ 
+    # parse
+    rows = parse_csv_from_llm_output(raw_output)
 
-# def generate_testcases(endpoints, model="phi"):
-#     prompt = BASE_PROMPT.format(endpoints=endpoints)
+    # return CSV string
+    csv_string = generate_csv_string(rows)
 
-#     print("[STEP] Sending request to Ollama...")
-#     resp = requests.post(
-#         "http://localhost:11434/api/generate",
-#         json={
-#             "model": model,
-#             "prompt": prompt,
-#         },
-#         timeout=60,
-#         stream=True
-#     )
-#     print("[STEP] Streaming response...")
-
-#     output = ""
-#     chunk_count = 0
-
-#     for line in resp.iter_lines():
-#         if not line:
-#             continue
-
-#         decoded = line.decode("utf-8")
-#         chunk_count += 1
-#         print(f"[CHUNK {chunk_count}] {decoded[:120]}...")  # log 80 ký tự đầu
-
-#         try:
-#             obj = json.loads(decoded)
-#         except Exception as e:
-#             print("[WARN] JSON decode failed on chunk:", e)
-#             print(decoded)
-#             continue
-
-#         if "response" in obj:
-#             output += obj["response"]
-
-#     print("[DONE] Streaming complete. Total chunks:", chunk_count)
-#     print("[OUTPUT SIZE]", len(output), "characters")
-
-#     return output
-
-
-# import requests
-# import json
-# from .testcase_prompt import PROMPT_TEMPLATE
-
-# def generate_testcases(endpoints, model="phi"):
-#     prompt = PROMPT_TEMPLATE.format(endpoints=endpoints)
-
-#     resp = requests.post(
-#         "http://localhost:11434/api/generate",
-#         json={"model": model, "prompt": prompt},
-#         stream=True
-#     )
-
-#     output = ""
-#     for line in resp.iter_lines():
-#         if line:
-#             obj = json.loads(line.decode('utf-8'))
-#             if "response" in obj:
-#                 output += obj["response"]
-
-#     return output
+    return csv_string

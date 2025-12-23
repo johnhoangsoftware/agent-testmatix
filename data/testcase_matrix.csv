@@ -1,6 +1,8 @@
-endpoint,method,test_type,input_json,expected_status_code
-endpoint, method, test_type, input_json, expected_status_code
-Question: What are three possible tests that could be conducted using these criteria, ensuring all four conditions (positive valid input, missing required fields, wrong data types, and boundary values) have been met?
-Using deductive logic, since we know the endpoint, method, and parameters to test, we can begin by constructing a list of different inputs for our test cases. In this case, there are no specific input parameters mentioned, so we will use basic variables and data types for testing:
-To validate each testcase, we'll use inductive logic. For our first test case, the name and age are valid input types and do not meet any of our boundary values or wrong data type criteria. So we assume this is a positive test case. For Test Case 2," the age of 12.5 is a valid input but does not match with the ""age"" field's required integer value. This meets the missing required fields condition. For Test Case 3"," though the name ""Biscuit"" and ""ten years"" are valid inputs", 'age' should be an integer instead of a string. So this meets the wrong data types criteria.
-"Answer: The three valid tests that could be conducted are Test Cases 1: {""name"": ""Fido"""," ""age"": 5}", 2: {'name': 'Whiskers', 'age': 12.5} and 3: {'name': 'Biscuit', 'age': 'ten years'}.
+endpoint,method,test_type,input_json,expected_status_code
+/user/john_doe,GET,positive valid input,null,200
+/user/,GET,missing required fields,null,400
+/user/user@name,GET,wrong data types,null,400
+/user/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,GET,boundary values,null,400
+/user/john_doe,GET,unauthorized,null,401
+/user/nonexistentuser123,GET,invalid enum values,null,404
+/user/john_doe,GET,unauthorized,null,401

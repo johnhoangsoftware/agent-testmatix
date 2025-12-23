@@ -1,10 +1,12 @@
 import requests
-from config.settings import OPENAPI_URL
 import json
 import os
 
-def load_spec():
-    resp = requests.get(OPENAPI_URL, timeout=15)
+def load_spec(url=None):
+    if url is None:
+        from config.settings import OPENAPI_URL
+        url = OPENAPI_URL
+    resp = requests.get(url, timeout=15)
     resp.raise_for_status()
     data = resp.json()
 
